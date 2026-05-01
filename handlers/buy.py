@@ -468,11 +468,18 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="menu_main")],
     ]
 
-    await query.edit_message_text(
-        message,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="HTML",
-    )
+    try:
+        await query.edit_message_text(
+            message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        if "Message is not modified" in str(e):
+            # Mensagem igual — só avisa via popup, não crashar
+            await query.answer("⏳ Status não mudou ainda. Tente novamente em alguns segundos.", show_alert=True)
+        else:
+            raise
 
 
 # ─── Registro dos handlers ───────────────────────────────────────────────────
