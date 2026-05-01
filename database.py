@@ -309,13 +309,15 @@ async def create_transaction(telegram_id: int, plan_id: int, amount_brl: float,
 
 
 async def get_transaction_by_provider_id(provider_transaction_id: str) -> Optional[Dict[str, Any]]:
-    """Busca uma transação pelo ID do provedor."""
+    """Busca uma transação pelo ID do provedor (inclui plan_name e data_gb via JOIN)."""
     async with aiosqlite.connect(config.DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM transactions WHERE provider_transaction_id = ?",
-            (provider_transaction_id,)
-        ) as cursor:
+        async with db.execute("""
+            SELECT t.*, p.name as plan_name, p.data_gb
+            FROM transactions t
+            LEFT JOIN plans p ON t.plan_id = p.id
+            WHERE t.provider_transaction_id = ?
+        """, (provider_transaction_id,)) as cursor:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
