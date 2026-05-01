@@ -15,7 +15,7 @@ PUSHSHIPAY_WEBHOOK_SECRET = os.getenv("PUSHSHIPAY_WEBHOOK_SECRET", "")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "0.0.0.0")
 WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", "8443"))
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook/payment")
-WEBHOOK_PUBLIC_URL = os.getenv("WEBHOOK_PUBLIC_URL", "https://e901-170-245-95-178.ngrok-free.app/webhook/payment")
+WEBHOOK_PUBLIC_URL = os.getenv("WEBHOOK_PUBLIC_URL", "https://esimfinal.onrender.com/webhook/payment")
 
 # Banco de dados
 DATABASE_PATH = os.getenv("DATABASE_PATH", "esim_bot.db")
