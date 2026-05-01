@@ -394,25 +394,44 @@ async def pay_pix_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── Verificação automática de pagamento PIX ────────────────────────────────
 
 async def auto_check_payment(bot, telegram_id: int, transaction_id: str, plan: dict):
-    """Verifica automaticamente se o pagamento foi confirmado (polling)."""
+    """Verifica automaticamente se o pagamento foi confirmado (polling) e entrega o eSIM."""
     for _ in range(60):  # 60 tentativas x 5s = 5 minutos
         await asyncio.sleep(5)
         try:
             status = await payment.check_transaction_status(transaction_id)
             if status == "paid":
                 await database.mark_transaction_paid(transaction_id)
-                await bot.send_message(
-                    chat_id=telegram_id,
-                    text=(
-                        f"✅ <b>Pagamento confirmado!</b>\n\n"
-                        f"📦 Plano: {plan['name']}\n"
-                        f"📊 Dados: {plan['data_gb']} GB\n"
-                        f"💰 Valor: R$ {plan['price_brl']:.2f}\n\n"
-                        f"⏳ Seu eSIM está sendo processado e será entregue em breve."
-                    ),
-                    parse_mode="HTML",
-                )
-                logger.info(f"Pagamento PIX confirmado: {transaction_id}")
+
+                # Busca a transação completa para entrega
+                transaction = await database.get_transaction_by_provider_id(transaction_id)
+                if not transaction:
+                    logger.error(f"Transação {transaction_id} não encontrada após mark_paid")
+                    return
+
+                # Verifica o tipo: esim ou streaming
+                provider_payload = transaction.get("provider_payload") or {}
+                if isinstance(provider_payload, str):
+                    import json as _json
+                    try:
+                        provider_payload = _json.loads(provider_payload)
+                    except Exception:
+                        provider_payload = {}
+
+                is_streaming = bool(provider_payload.get("streaming_servico"))
+
+                if is_streaming:
+                    delivery_result = await webhook.deliver_streaming_for_transaction(transaction, bot)
+                else:
+                    delivery_result = await webhook.deliver_foto_for_transaction(transaction, bot)
+
+                if delivery_result.get("status") == "delivered":
+                    await database.mark_transaction_delivered(
+                        transaction_id,
+                        delivery_result,
+                    )
+                    await webhook.postar_venda_no_canal(bot, transaction, "streaming" if is_streaming else "esim")
+
+                logger.info(f"Pagamento PIX confirmado e entregue: {transaction_id}")
                 return
             elif status in ("canceled", "expired", "failed"):
                 await database.update_transaction_status(transaction_id, "failed")
@@ -442,6 +461,29 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
     if api_status == "paid" and transaction["status"] == "pending":
         await database.mark_transaction_paid(provider_transaction_id)
         transaction["status"] = "paid"
+
+        # Recarrega transação atualizada e entrega o produto
+        transaction = await database.get_transaction_by_provider_id(provider_transaction_id)
+
+        provider_payload = transaction.get("provider_payload") or {}
+        if isinstance(provider_payload, str):
+            import json as _json
+            try:
+                provider_payload = _json.loads(provider_payload)
+            except Exception:
+                provider_payload = {}
+
+        is_streaming = bool(provider_payload.get("streaming_servico"))
+
+        if is_streaming:
+            delivery_result = await webhook.deliver_streaming_for_transaction(transaction, context.bot)
+        else:
+            delivery_result = await webhook.deliver_foto_for_transaction(transaction, context.bot)
+
+        if delivery_result.get("status") == "delivered":
+            await database.mark_transaction_delivered(provider_transaction_id, delivery_result)
+            await webhook.postar_venda_no_canal(context.bot, transaction, "streaming" if is_streaming else "esim")
+            transaction["status"] = "delivered"
 
     status_messages = {
         "pending":   "⏳ Pagamento ainda pendente. Aguardando confirmação.",
